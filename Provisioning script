@@ -1,0 +1,57 @@
+$ErrorActionPreference = "Stop"
+
+New-Item -ItemType Directory -Force -Path "C:\nginx" | Out-Null
+
+$nginxUrl = "https://nginx.org/download/nginx-1.26.0.zip"
+$zipPath = "C:\nginx\nginx.zip"
+
+Invoke-WebRequest -Uri $nginxUrl -OutFile $zipPath
+Expand-Archive -Path $zipPath -DestinationPath "C:\nginx" -Force
+
+$extractedFolder = Get-ChildItem "C:\nginx" | Where-Object {
+    $_.PSIsContainer -and $_.Name -like "nginx-*"
+}
+
+Move-Item "$($extractedFolder.FullName)\*" "C:\nginx" -Force
+Remove-Item $zipPath -Force
+Remove-Item $extractedFolder.FullName -Recurse -Force
+
+$nginxConf = @"
+worker_processes 1;
+events { worker_connections 1024; }
+
+http {
+    include mime.types;
+    default_type application/octet-stream;
+
+    server {
+        listen 80;
+
+        location / {
+            root html;
+            index index.html;
+        }
+    }
+}
+"@
+
+Set-Content -Path "C:\nginx\conf\nginx.conf" -Value $nginxConf -Encoding ASCII
+
+$htmlContent = @"
+<!DOCTYPE html>
+<html>
+<body>
+<h1>Nginx running inside Windows Vagrant VM</h1>
+</body>
+</html>
+"@
+
+Set-Content -Path "C:\nginx\html\index.html" -Value $htmlContent -Encoding ASCII
+
+New-NetFirewallRule -DisplayName "Nginx Port 80" `
+    -Direction Inbound `
+    -Protocol TCP `
+    -LocalPort 80 `
+    -Action Allow
+
+Start-Process "C:\nginx\nginx.exe"
